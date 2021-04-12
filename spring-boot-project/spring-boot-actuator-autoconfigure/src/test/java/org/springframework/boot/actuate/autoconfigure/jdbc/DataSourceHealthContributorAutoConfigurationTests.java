@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 
 package org.springframework.boot.actuate.autoconfigure.jdbc;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.sql.DataSource;
 
@@ -38,6 +41,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -50,8 +54,7 @@ class DataSourceHealthContributorAutoConfigurationTests {
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 			.withConfiguration(AutoConfigurations.of(DataSourceAutoConfiguration.class,
-					HealthContributorAutoConfiguration.class, DataSourceHealthContributorAutoConfiguration.class))
-			.withPropertyValues("spring.datasource.initialization-mode=never");
+					HealthContributorAutoConfiguration.class, DataSourceHealthContributorAutoConfiguration.class));
 
 	@Test
 	void runShouldCreateIndicator() {
@@ -94,9 +97,16 @@ class DataSourceHealthContributorAutoConfigurationTests {
 	}
 
 	@Test
-	void runWithOnlyRoutingDataSourceShouldIncludeRoutingDataSource() {
-		this.contextRunner.withUserConfiguration(RoutingDataSourceConfig.class)
-				.run((context) -> assertThat(context).hasSingleBean(RoutingDataSourceHealthIndicator.class));
+	void runWithOnlyRoutingDataSourceShouldIncludeRoutingDataSourceWithComposedIndicators() {
+		this.contextRunner.withUserConfiguration(RoutingDataSourceConfig.class).run((context) -> {
+			assertThat(context).hasSingleBean(RoutingDataSourceHealthIndicator.class);
+			RoutingDataSourceHealthIndicator routingHealthContributor = context
+					.getBean(RoutingDataSourceHealthIndicator.class);
+			assertThat(routingHealthContributor.getContributor("one")).isInstanceOf(DataSourceHealthIndicator.class);
+			assertThat(routingHealthContributor.getContributor("two")).isInstanceOf(DataSourceHealthIndicator.class);
+			assertThat(routingHealthContributor.iterator()).toIterable().extracting("name")
+					.containsExactlyInAnyOrder("one", "two");
+		});
 	}
 
 	@Test
@@ -144,7 +154,12 @@ class DataSourceHealthContributorAutoConfigurationTests {
 
 		@Bean
 		AbstractRoutingDataSource routingDataSource() {
-			return mock(AbstractRoutingDataSource.class);
+			Map<Object, DataSource> dataSources = new HashMap<>();
+			dataSources.put("one", mock(DataSource.class));
+			dataSources.put("two", mock(DataSource.class));
+			AbstractRoutingDataSource routingDataSource = mock(AbstractRoutingDataSource.class);
+			given(routingDataSource.getResolvedDataSources()).willReturn(dataSources);
+			return routingDataSource;
 		}
 
 	}
